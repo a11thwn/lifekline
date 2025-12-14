@@ -39,8 +39,14 @@ export interface AnalysisData {
   summary: string;
   summaryScore: number; // 0-10
   
+  personality: string;      // 性格分析
+  personalityScore: number; // 0-10
+  
   industry: string;
   industryScore: number; // 0-10
+
+  fengShui: string;       // 发展风水 (New)
+  fengShuiScore: number;  // 0-10 (New)
   
   wealth: string;
   wealthScore: number; // 0-10
@@ -53,6 +59,12 @@ export interface AnalysisData {
   
   family: string;
   familyScore: number; // 0-10
+
+  // Crypto / Web3 Specifics
+  crypto: string;       // 币圈交易分析
+  cryptoScore: number;  // 投机运势评分
+  cryptoYear: string;   // 暴富流年 (e.g., 2025 乙巳)
+  cryptoStyle: string;  // 适合流派 (现货/合约/链上Alpha)
 }
 
 export interface LifeDestinyResult {

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
@@ -27,6 +28,39 @@
       }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: #9ca3af;
+      }
+
+      /* Print Styles for Save Report */
+      @media print {
+        /* Hide UI elements not needed in the report */
+        .no-print, header, footer, button {
+          display: none !important;
+        }
+        
+        /* Reset layout for paper */
+        body { 
+          background-color: white !important; 
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        
+        main {
+          margin: 0 !important;
+          padding: 0 !important;
+          max-width: 100% !important;
+          box-shadow: none !important;
+        }
+
+        /* Ensure charts and colored bars print correctly */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        /* Ensure page breaks don't cut cards in half */
+        .break-inside-avoid {
+          page-break-inside: avoid;
+        }
       }
     </style>
 <script type="importmap">
