@@ -1,37 +1,107 @@
+import React, { useState, useMemo, useRef } from "react";
+import BaziForm from "./components/BaziForm";
+import LifeKLineChart from "./components/LifeKLineChart";
+import AnalysisResult from "./components/AnalysisResult";
+import { UserInput, LifeDestinyResult } from "./types";
+import {
+  generateBaziPrompt,
+  parseLifeDestinyResult,
+} from "./services/promptGenerator";
+import {
+  Sparkles,
+  AlertCircle,
+  BookOpen,
+  Key,
+  Download,
+  Twitter,
+  Printer,
+  Trophy,
+  Copy,
+  Check,
+  FileJson,
+  Play,
+  Info, // Added Info for toast if needed
+} from "lucide-react";
 
-import React, { useState, useMemo } from 'react';
-import BaziForm from './components/BaziForm';
-import LifeKLineChart from './components/LifeKLineChart';
-import AnalysisResult from './components/AnalysisResult';
-import { UserInput, LifeDestinyResult } from './types';
-import { generateLifeAnalysis } from './services/geminiService';
-import { API_STATUS } from './constants';
-import { Sparkles, AlertCircle, BookOpen, Key, Download, Twitter, Printer, Trophy } from 'lucide-react';
+// Simple Toast Component
+const Toast = ({ message, visible }: { message: string; visible: boolean }) => {
+  if (!visible) return null;
+  return (
+    <div className="fixed top-24 right-4 z-[100] animate-fade-in-left">
+      <div className="bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
+        <Check className="w-5 h-5" />
+        <span className="font-bold text-sm shadow-sm">{message}</span>
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<LifeDestinyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [userName, setUserName] = useState<string>('');
+  const [userName, setUserName] = useState<string>("");
 
-  const handleFormSubmit = async (data: UserInput) => {
-    // 检查系统状态
-    if (API_STATUS === 0) {
-      setError("当前服务器正在维护，请择时再来");
-      // Removed scrollTo to keep user context
+  // Prompt & JSON Handling
+  const [generatedPrompt, setGeneratedPrompt] = useState<string>("");
+  const [showPromptArea, setShowPromptArea] = useState(false);
+  const [jsonInput, setJsonInput] = useState<string>("");
+  const [hasCopied, setHasCopied] = useState(false);
+
+  // References for scrolling
+  const promptRef = useRef<HTMLDivElement>(null);
+  const jsonRef = useRef<HTMLDivElement>(null);
+
+  const handleGeneratePrompt = (data: UserInput) => {
+    try {
+      const prompt = generateBaziPrompt(data);
+      setGeneratedPrompt(prompt);
+      setUserName(data.name || "");
+      setShowPromptArea(true);
+      setError(null);
+
+      // Scroll to prompt area after a short delay to allow render
+      setTimeout(() => {
+        promptRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    } catch (err: any) {
+      setError("生成提示词失败：" + err.message);
+    }
+  };
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedPrompt);
+      setHasCopied(true);
+      setTimeout(() => setHasCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy", err);
+    }
+  };
+
+  const handleVisualize = () => {
+    if (!jsonInput.trim()) {
+      setError("请先粘贴 AI 返回的 JSON 数据");
       return;
     }
 
     setLoading(true);
     setError(null);
-    setResult(null);
-    setUserName(data.name || '');
 
     try {
-      const analysis = await generateLifeAnalysis(data);
+      const analysis = parseLifeDestinyResult(jsonInput);
       setResult(analysis);
+      setShowPromptArea(false); // Hide the setup area on success to focus on chart
+      setGeneratedPrompt(""); // Clear prompt to reset flow (optional, maybe keep it?)
+      // Actually let's keep the user in a "Result Mode".
     } catch (err: any) {
-      setError(err.message || "命理测算过程中发生了意外错误，请重试。");
+      // Improve error message for common JSON errors
+      let msg = err.message;
+      if (err.message.includes("Unexpected token")) {
+        msg =
+          "JSON 解析失败：格式不正确。请确保您复制的仅仅是 { ... } 包含的完整 JSON 代码块，不要包含其他文字。";
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -46,42 +116,57 @@ const App: React.FC = () => {
 
     // 获取当前精确时间 (到秒)
     const now = new Date();
-    const timeString = now.toLocaleString('zh-CN', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit', 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit',
-      hour12: false 
+    const timeString = now.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
     });
 
     // 1. 获取图表 SVG (Recharts 生成的是 SVG)
-    const chartContainer = document.querySelector('.recharts-surface');
+    const chartContainer = document.querySelector(".recharts-surface");
     // 如果找不到 chart，给一个提示文本
-    const chartSvg = chartContainer ? chartContainer.outerHTML : '<div style="padding:20px;text-align:center;">图表导出失败，请截图保存</div>';
+    const chartSvg = chartContainer
+      ? chartContainer.outerHTML
+      : '<div style="padding:20px;text-align:center;">图表导出失败，请截图保存</div>';
 
     // 2. 获取命理分析部分的 HTML
-    const analysisContainer = document.getElementById('analysis-result-container');
-    const analysisHtml = analysisContainer ? analysisContainer.innerHTML : '';
+    const analysisContainer = document.getElementById(
+      "analysis-result-container"
+    );
+    const analysisHtml = analysisContainer ? analysisContainer.innerHTML : "";
 
     // 3. 生成流年详批表格 (替代交互式的 Tooltip)
     // 根据分数判断颜色
-    const tableRows = result.chartData.map(item => {
-      const scoreColor = item.close >= item.open ? 'text-green-600' : 'text-red-600';
-      const trendIcon = item.close >= item.open ? '▲' : '▼';
-      return `
+    const tableRows = result.chartData
+      .map((item) => {
+        const scoreColor =
+          item.close >= item.open ? "text-green-600" : "text-red-600";
+        const trendIcon = item.close >= item.open ? "▲" : "▼";
+        return `
         <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-          <td class="p-3 border-r border-gray-100 text-center font-mono">${item.age}岁</td>
-          <td class="p-3 border-r border-gray-100 text-center font-bold">${item.year} ${item.ganZhi}</td>
-          <td class="p-3 border-r border-gray-100 text-center text-sm">${item.daYun || '-'}</td>
+          <td class="p-3 border-r border-gray-100 text-center font-mono">${
+            item.age
+          }岁</td>
+          <td class="p-3 border-r border-gray-100 text-center font-bold">${
+            item.year
+          } ${item.ganZhi}</td>
+          <td class="p-3 border-r border-gray-100 text-center text-sm">${
+            item.daYun || "-"
+          }</td>
           <td class="p-3 border-r border-gray-100 text-center font-bold ${scoreColor}">
             ${item.score} <span class="text-xs">${trendIcon}</span>
           </td>
-          <td class="p-3 text-sm text-gray-700 text-justify leading-relaxed">${item.reason}</td>
+          <td class="p-3 text-sm text-gray-700 text-justify leading-relaxed">${
+            item.reason
+          }</td>
         </tr>
       `;
-    }).join('');
+      })
+      .join("");
 
     const detailedTableHtml = `
       <div class="mt-12 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -116,7 +201,7 @@ const App: React.FC = () => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${userName || '用户'} - 人生K线命理报告</title>
+  <title>${userName || "用户"} - 人生K线命理报告</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Inter:wght@400;600&display=swap');
@@ -131,7 +216,9 @@ const App: React.FC = () => {
     
     <!-- Header -->
     <div class="text-center border-b border-gray-200 pb-8 relative">
-      <h1 class="text-4xl font-bold font-serif-sc text-gray-900 mb-2">${userName ? userName + '的' : ''}人生K线命理报告</h1>
+      <h1 class="text-4xl font-bold font-serif-sc text-gray-900 mb-2">${
+        userName ? userName + "的" : ""
+      }人生K线命理报告</h1>
       <p class="text-gray-500 text-sm">生成时间：${timeString} | 来源：人生K线 lifekline.0xsakura.me</p>
       <a href="https://x.com/0xsakura666" target="_blank" class="absolute top-0 right-0 flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-twitter"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg>
@@ -175,11 +262,13 @@ const App: React.FC = () => {
     `;
 
     // 5. 触发下载
-    const blob = new Blob([fullHtml], { type: 'text/html' });
+    const blob = new Blob([fullHtml], { type: "text/html" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `${userName || 'User'}_Life_Kline_Report_${now.getTime()}.html`;
+    a.download = `${
+      userName || "User"
+    }_Life_Kline_Report_${now.getTime()}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -189,7 +278,9 @@ const App: React.FC = () => {
   // 计算人生巅峰
   const peakYearItem = useMemo(() => {
     if (!result || !result.chartData.length) return null;
-    return result.chartData.reduce((prev, current) => (prev.high > current.high) ? prev : current);
+    return result.chartData.reduce((prev, current) =>
+      prev.high > current.high ? prev : current
+    );
   }, [result]);
 
   return (
@@ -202,72 +293,150 @@ const App: React.FC = () => {
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-serif-sc font-bold text-gray-900 tracking-wide">人生K线</h1>
-              <p className="text-xs text-gray-500 uppercase tracking-widest">Life Destiny K-Line</p>
+              <h1 className="text-2xl font-serif-sc font-bold text-gray-900 tracking-wide">
+                人生K线
+              </h1>
+              <p className="text-xs text-gray-500 uppercase tracking-widest">
+                Life Destiny K-Line
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-6">
-            <a 
-              href="https://x.com/0xsakura666" 
-              target="_blank" 
+            <a
+              href="https://x.com/0xsakura666"
+              target="_blank"
               rel="noopener noreferrer"
               className="hidden md:flex items-center gap-2 text-sm text-gray-500 font-medium bg-gray-100 hover:bg-gray-200 hover:text-indigo-600 px-3 py-1.5 rounded-full transition-all"
             >
-               <Twitter className="w-4 h-4" />
-               基于 AI 大模型驱动 | 推特 @0xSakura666
+              <Twitter className="w-4 h-4" />
+              基于 AI 大模型驱动 | 推特 @0xSakura666
             </a>
           </div>
         </div>
       </header>
 
+      <Toast message="提示词已复制！请发送给 AI 模型" visible={hasCopied} />
+
       {/* Main Content */}
       <main className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12 flex flex-col gap-12">
-        
         {/* If no result, show intro and form */}
         {!result && (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 animate-fade-in">
             <div className="text-center max-w-2xl flex flex-col items-center">
               <h2 className="text-4xl md:text-5xl font-serif-sc font-bold text-gray-900 mb-6">
-                洞悉命运起伏 <br/>
+                洞悉命运起伏 <br />
                 <span className="text-indigo-600">预见人生轨迹</span>
               </h2>
               <p className="text-gray-600 text-lg leading-relaxed mb-8">
-                结合<strong>传统八字命理</strong>与<strong>金融可视化技术</strong>
+                结合<strong>传统八字命理</strong>与
+                <strong>金融可视化技术</strong>
                 将您的一生运势绘制成类似股票行情的K线图。
-                助您发现人生牛市，规避风险熊市，把握关键转折点。
+                <br />
+                <span className="text-sm bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded mt-2 inline-block">
+                  无需 API Key，拷贝提示词给 ChatGPT/Claude 即可生成
+                </span>
               </p>
-
-              {/* Tutorial Buttons Group */}
-              <div className="flex flex-row gap-4 w-full max-w-lg mb-4">
-                {/* Usage Tutorial */}
-                <a 
-                  href="https://jcnjmxofi1yl.feishu.cn/wiki/OPa4woxiBiFP9okQ9yWcbcXpnEw"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 bg-white px-4 py-3 rounded-xl shadow-sm border border-indigo-100 hover:border-indigo-500 hover:shadow-md transition-all transform hover:-translate-y-0.5 group"
-                >
-                  <div className="bg-indigo-50 p-1.5 rounded-full text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                    <BookOpen className="w-4 h-4" />
-                  </div>
-                  <span className="text-base font-bold text-gray-800 group-hover:text-indigo-700 transition-colors">使用教程</span>
-                </a>
-
-                {/* API Tutorial */}
-                <a 
-                  href="https://jcnjmxofi1yl.feishu.cn/wiki/JX0iwzoeqie3GEkJ8XQcMesan3c"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 bg-white px-4 py-3 rounded-xl shadow-sm border border-emerald-100 hover:border-emerald-500 hover:shadow-md transition-all transform hover:-translate-y-0.5 group"
-                >
-                  <div className="bg-emerald-50 p-1.5 rounded-full text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                    <Key className="w-4 h-4" />
-                  </div>
-                  <span className="text-base font-bold text-gray-800 group-hover:text-emerald-700 transition-colors">API教程</span>
-                </a>
-              </div>
             </div>
-            
-            <BaziForm onSubmit={handleFormSubmit} isLoading={loading} />
+
+            <BaziForm onGeneratePrompt={handleGeneratePrompt} />
+
+            {/* Step 2: Prompt and JSON Input Area */}
+            {showPromptArea && (
+              <div
+                ref={promptRef}
+                className="w-full max-w-3xl space-y-6 animate-fade-in-up"
+              >
+                {/* Arrow Down */}
+                <div className="flex justify-center text-gray-300">
+                  <div className="animate-bounce">↓</div>
+                </div>
+
+                {/* Prompt Display */}
+                <div className="bg-white rounded-xl shadow-lg border border-indigo-100 overflow-hidden">
+                  <div className="bg-indigo-50 px-6 py-4 border-b border-indigo-100 flex justify-between items-center">
+                    <h3 className="font-bold text-indigo-900 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      第二步：复制提示词 (Prompt)
+                    </h3>
+                    <button
+                      onClick={handleCopyPrompt}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        hasCopied
+                          ? "bg-green-500 text-white"
+                          : "bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white border border-indigo-200"
+                      }`}
+                    >
+                      {hasCopied ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      {hasCopied ? "已复制" : "一键复制"}
+                    </button>
+                  </div>
+                  <div className="p-4 bg-gray-50 border-b border-gray-100">
+                    <p className="text-sm text-gray-500 mb-2">
+                      请将以下内容完整复制，发送给 **ChatGPT (GPT-4), Claude 3
+                      Opus, 或 Gemini 1.5 Pro** 等高智商模型。
+                    </p>
+                    <textarea
+                      readOnly
+                      value={generatedPrompt}
+                      className="w-full h-40 p-3 text-xs md:text-sm font-mono text-gray-600 bg-white border border-gray-200 rounded-lg focus:outline-none resize-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Arrow Down */}
+                <div className="flex justify-center text-gray-300">
+                  <div className="animate-bounce">↓</div>
+                </div>
+
+                {/* JSON Input */}
+                <div
+                  ref={jsonRef}
+                  className="bg-white rounded-xl shadow-lg border border-emerald-100 overflow-hidden"
+                >
+                  <div className="bg-emerald-50 px-6 py-4 border-b border-emerald-100 flex justify-between items-center">
+                    <h3 className="font-bold text-emerald-900 flex items-center gap-2">
+                      <FileJson className="w-4 h-4" />
+                      第三步：粘贴 AI 返回的 JSON 结果
+                    </h3>
+                  </div>
+                  <div className="p-6">
+                    <p className="text-sm text-gray-500 mb-3">
+                      将 AI 返回的 JSON 代码块（<code>{`{ ... }`}</code>
+                      ）完整粘贴到下方：
+                    </p>
+                    <textarea
+                      value={jsonInput}
+                      onChange={(e) => setJsonInput(e.target.value)}
+                      placeholder='在此粘贴 JSON 数据... 
+示例:
+{
+  "bazi": ["丙寅", ...],
+  "chartPoints": [ ... ]
+}'
+                      className="w-full h-40 p-4 text-xs md:text-sm font-mono text-gray-800 bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-y"
+                    />
+
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={handleVisualize}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transform transition-all hover:scale-105 flex items-center gap-2"
+                      >
+                        {loading ? (
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Play className="w-5 h-5 fill-current" />
+                        )}
+                        生成可视化图表
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg border border-red-100 max-w-md w-full animate-bounce-short">
@@ -281,55 +450,61 @@ const App: React.FC = () => {
         {/* Results View */}
         {result && (
           <div className="animate-fade-in space-y-12">
-            
             <div className="flex flex-col md:flex-row justify-between items-end md:items-center border-b border-gray-200 pb-4 gap-4">
-               <h2 className="text-2xl font-bold font-serif-sc text-gray-800">
-                 {userName ? `${userName}的` : ''}命盘分析报告
-               </h2>
-               
-               <div className="flex gap-3 no-print">
-                 <button
-                   onClick={handlePrint}
-                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white border border-indigo-600 rounded-lg hover:bg-indigo-700 transition-all font-medium text-sm shadow-sm"
-                 >
-                   <Printer className="w-4 h-4" />
-                   保存PDF
-                 </button>
-                 <button
-                   onClick={handleSaveHtml}
-                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white border border-indigo-600 rounded-lg hover:bg-indigo-700 transition-all font-medium text-sm shadow-sm"
-                 >
-                   <Download className="w-4 h-4" />
-                   保存网页
-                 </button>
-                 <button 
-                   onClick={() => setResult(null)}
-                   className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all font-medium text-sm"
-                 >
-                   ← 重新排盘
-                 </button>
-               </div>
+              <h2 className="text-2xl font-bold font-serif-sc text-gray-800">
+                {userName ? `${userName}的` : ""}命盘分析报告
+              </h2>
+
+              <div className="flex gap-3 no-print">
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white border border-indigo-600 rounded-lg hover:bg-indigo-700 transition-all font-medium text-sm shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  保存PDF
+                </button>
+                <button
+                  onClick={handleSaveHtml}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white border border-indigo-600 rounded-lg hover:bg-indigo-700 transition-all font-medium text-sm shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  保存网页
+                </button>
+                <button
+                  onClick={() => setResult(null)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all font-medium text-sm"
+                >
+                  ← 重新排盘
+                </button>
+              </div>
             </div>
 
             {/* The Chart */}
             <section className="space-y-4 break-inside-avoid">
               <div className="flex flex-col gap-1">
                 <h3 className="text-xl font-bold text-gray-700 flex items-center gap-2">
-                   <span className="w-1 h-6 bg-indigo-600 rounded-full"></span>
-                   流年大运走势图 (100年)
+                  <span className="w-1 h-6 bg-indigo-600 rounded-full"></span>
+                  流年大运走势图 (100年)
                 </h3>
                 {peakYearItem && (
-                   <p className="text-sm font-bold text-indigo-800 bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-flex items-center gap-2 self-start mt-1">
-                     <Trophy className="w-3 h-3 text-amber-500" />
-                     人生巅峰年份：{peakYearItem.year}年 ({peakYearItem.ganZhi}) - {peakYearItem.age}岁，评分 <span className="text-amber-600 text-lg">{peakYearItem.high}</span>
-                   </p>
+                  <p className="text-sm font-bold text-indigo-800 bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-flex items-center gap-2 self-start mt-1">
+                    <Trophy className="w-3 h-3 text-amber-500" />
+                    人生巅峰年份：{peakYearItem.year}年 ({peakYearItem.ganZhi})
+                    - {peakYearItem.age}岁，评分{" "}
+                    <span className="text-amber-600 text-lg">
+                      {peakYearItem.high}
+                    </span>
+                  </p>
                 )}
               </div>
-              
+
               <p className="text-sm text-gray-500 mb-2 no-print">
-                <span className="text-green-600 font-bold">绿色K线</span> 代表运势上涨（吉），
-                <span className="text-red-600 font-bold">红色K线</span> 代表运势下跌（凶）。
-                <span className="text-red-500 font-bold">★</span> 标记为全盘最高运势点。
+                <span className="text-green-600 font-bold">绿色K线</span>{" "}
+                代表运势上涨（吉），
+                <span className="text-red-600 font-bold">红色K线</span>{" "}
+                代表运势下跌（凶）。
+                <span className="text-red-500 font-bold">★</span>{" "}
+                标记为全盘最高运势点。
               </p>
               <LifeKLineChart data={result.chartData} />
             </section>
@@ -337,46 +512,73 @@ const App: React.FC = () => {
             {/* The Text Report */}
             {/* Added ID for HTML extraction */}
             <section id="analysis-result-container">
-               <AnalysisResult analysis={result.analysis} />
+              <AnalysisResult analysis={result.analysis} />
             </section>
-            
+
             {/* Print Only: Detailed Table to substitute interactive tooltips */}
             <div className="hidden print:block mt-8 break-before-page">
-               <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 mb-4">
-                  <div className="w-1 h-5 bg-indigo-600 rounded-full"></div>
-                  <h3 className="text-xl font-bold text-gray-800 font-serif-sc">流年详批全表</h3>
-               </div>
-               <table className="w-full text-left border-collapse text-sm">
-                 <thead>
-                   <tr className="bg-gray-100 text-gray-600 font-bold uppercase tracking-wider">
-                     <th className="p-2 border border-gray-200 text-center w-16">年龄</th>
-                     <th className="p-2 border border-gray-200 text-center w-24">流年</th>
-                     <th className="p-2 border border-gray-200 text-center w-24">大运</th>
-                     <th className="p-2 border border-gray-200 text-center w-16">评分</th>
-                     <th className="p-2 border border-gray-200">运势批断</th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   {result.chartData.map((item) => (
-                     <tr key={item.age} className="border-b border-gray-100 break-inside-avoid">
-                       <td className="p-2 border border-gray-100 text-center font-mono">{item.age}</td>
-                       <td className="p-2 border border-gray-100 text-center font-bold">{item.year} {item.ganZhi}</td>
-                       <td className="p-2 border border-gray-100 text-center">{item.daYun || '-'}</td>
-                       <td className={`p-2 border border-gray-100 text-center font-bold ${item.close >= item.open ? 'text-green-600' : 'text-red-600'}`}>
-                         {item.score}
-                       </td>
-                       <td className="p-2 border border-gray-100 text-gray-700 text-justify text-xs leading-relaxed">
-                         {item.reason}
-                       </td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-               
-               <div className="mt-8 pt-4 border-t border-gray-200 flex justify-between items-center text-xs text-gray-500">
-                  <span>生成时间：{new Date().toLocaleString()}</span>
-                  <span className="flex items-center gap-1"><Twitter className="w-3 h-3"/> @0xSakura666</span>
-               </div>
+              <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 mb-4">
+                <div className="w-1 h-5 bg-indigo-600 rounded-full"></div>
+                <h3 className="text-xl font-bold text-gray-800 font-serif-sc">
+                  流年详批全表
+                </h3>
+              </div>
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-gray-100 text-gray-600 font-bold uppercase tracking-wider">
+                    <th className="p-2 border border-gray-200 text-center w-16">
+                      年龄
+                    </th>
+                    <th className="p-2 border border-gray-200 text-center w-24">
+                      流年
+                    </th>
+                    <th className="p-2 border border-gray-200 text-center w-24">
+                      大运
+                    </th>
+                    <th className="p-2 border border-gray-200 text-center w-16">
+                      评分
+                    </th>
+                    <th className="p-2 border border-gray-200">运势批断</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.chartData.map((item) => (
+                    <tr
+                      key={item.age}
+                      className="border-b border-gray-100 break-inside-avoid"
+                    >
+                      <td className="p-2 border border-gray-100 text-center font-mono">
+                        {item.age}
+                      </td>
+                      <td className="p-2 border border-gray-100 text-center font-bold">
+                        {item.year} {item.ganZhi}
+                      </td>
+                      <td className="p-2 border border-gray-100 text-center">
+                        {item.daYun || "-"}
+                      </td>
+                      <td
+                        className={`p-2 border border-gray-100 text-center font-bold ${
+                          item.close >= item.open
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {item.score}
+                      </td>
+                      <td className="p-2 border border-gray-100 text-gray-700 text-justify text-xs leading-relaxed">
+                        {item.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-8 pt-4 border-t border-gray-200 flex justify-between items-center text-xs text-gray-500">
+                <span>生成时间：{new Date().toLocaleString()}</span>
+                <span className="flex items-center gap-1">
+                  <Twitter className="w-3 h-3" /> @0xSakura666
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -385,8 +587,16 @@ const App: React.FC = () => {
       {/* Footer */}
       <footer className="w-full bg-gray-900 text-gray-400 py-8 mt-auto no-print">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm flex flex-col items-center gap-2">
-          <p>&copy; {new Date().getFullYear()} 人生K线项目 | 仅供娱乐与文化研究，请勿迷信</p>
-          <a href="https://x.com/0xsakura666" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-white transition-colors">
+          <p>
+            &copy; {new Date().getFullYear()} 人生K线项目 |
+            仅供娱乐与文化研究，请勿迷信
+          </p>
+          <a
+            href="https://x.com/0xsakura666"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 hover:text-white transition-colors"
+          >
             <Twitter className="w-3 h-3" />
             @0xSakura666
           </a>

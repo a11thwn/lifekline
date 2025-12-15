@@ -1,6 +1,5 @@
-import { UserInput, LifeDestinyResult, Gender } from "../types";
+import { UserInput, Gender, LifeDestinyResult } from "../types";
 import { BAZI_SYSTEM_INSTRUCTION } from "../constants";
-import { MOCK_RESULT } from "./mockData";
 
 // Helper to determine stem polarity
 const getStemPolarity = (pillar: string): "YANG" | "YIN" => {
@@ -14,43 +13,12 @@ const getStemPolarity = (pillar: string): "YANG" | "YIN" => {
   return "YANG"; // fallback
 };
 
-export const generateLifeAnalysis = async (
-  input: UserInput
-): Promise<LifeDestinyResult> => {
-  // Mock data return as requested for K-line visualization
-  return MOCK_RESULT;
-
-  const { apiKey, apiBaseUrl, modelName } = input;
-
-  // FIX: Trim whitespace which causes header errors if copied with newlines
-  const cleanApiKey = apiKey ? apiKey.trim() : "";
-  const cleanBaseUrl = apiBaseUrl ? apiBaseUrl.trim().replace(/\/+$/, "") : "";
-  const targetModel =
-    modelName && modelName.trim() ? modelName.trim() : "gemini-3-pro-preview";
-
-  if (!cleanApiKey) {
-    throw new Error("请在表单中填写有效的 API Key");
-  }
-
-  // Check for non-ASCII characters to prevent obscure 'Failed to construct Request' errors
-  // If user accidentally pastes Chinese characters or emojis in the API key field
-  if (/[^\x00-\x7F]/.test(cleanApiKey)) {
-    throw new Error(
-      "API Key 包含非法字符（如中文或全角符号），请检查输入是否正确。"
-    );
-  }
-
-  if (!cleanBaseUrl) {
-    throw new Error("请在表单中填写有效的 API Base URL");
-  }
-
+export const generateBaziPrompt = (input: UserInput): string => {
   const genderStr = input.gender === Gender.MALE ? "男 (乾造)" : "女 (坤造)";
   const startAgeInt = parseInt(input.startAge) || 1;
-
-  // Calculate Da Yun Direction accurately
   const yearStemPolarity = getStemPolarity(input.yearPillar);
-  let isForward = false;
 
+  let isForward = false;
   if (input.gender === Gender.MALE) {
     isForward = yearStemPolarity === "YANG";
   } else {
@@ -63,7 +31,7 @@ export const generateLifeAnalysis = async (
     ? "例如：第一步是【戊申】，第二步则是【己酉】（顺排）"
     : "例如：第一步是【戊申】，第二步则是【丁未】（逆排）";
 
-  const userPrompt = `
+  return `
     请根据以下**已经排好的**八字四柱和**指定的大运信息**进行分析。
     
     【基本信息】
@@ -110,44 +78,26 @@ export const generateLifeAnalysis = async (
     4. 生成带评分的命理分析报告（包含性格分析、币圈交易分析、发展风水分析）。
     
     请严格按照系统指令生成 JSON 数据。
+    
+    以下是系统指令，请一并参考：
+    ${BAZI_SYSTEM_INSTRUCTION}
   `;
+};
 
+export const parseLifeDestinyResult = (
+  jsonContent: string
+): LifeDestinyResult => {
   try {
-    const response = await fetch(`${cleanBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cleanApiKey}`,
-      },
-      body: JSON.stringify({
-        model: targetModel,
-        messages: [
-          { role: "system", content: BAZI_SYSTEM_INSTRUCTION },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7,
-      }),
-    });
+    // Clean potential markdown code blocks if user pastes them
+    const cleanJson = jsonContent
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+    const data = JSON.parse(cleanJson);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`API 请求失败: ${response.status} - ${errText}`);
-    }
-
-    const jsonResult = await response.json();
-    const content = jsonResult.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error("模型未返回任何内容。");
-    }
-
-    // 解析 JSON
-    const data = JSON.parse(content);
-
-    // 简单校验数据完整性
+    // 简单校验数据完整性 (Simple validation)
     if (!data.chartPoints || !Array.isArray(data.chartPoints)) {
-      throw new Error("模型返回的数据格式不正确（缺失 chartPoints）。");
+      throw new Error("JSON 格式不正确：缺失 chartPoints 数组。");
     }
 
     return {
@@ -170,15 +120,14 @@ export const generateLifeAnalysis = async (
         healthScore: data.healthScore || 5,
         family: data.family || "无",
         familyScore: data.familyScore || 5,
-        // Crypto Fields
         crypto: data.crypto || "暂无交易分析",
         cryptoScore: data.cryptoScore || 5,
         cryptoYear: data.cryptoYear || "待定",
         cryptoStyle: data.cryptoStyle || "现货定投",
       },
     };
-  } catch (error) {
-    console.error("Gemini/OpenAI API Error:", error);
-    throw error;
+  } catch (e: any) {
+    console.error("JSON Parse Error", e);
+    throw new Error("JSON 解析失败，请检查粘贴的内容是否为合法的 JSON 格式。");
   }
 };
