@@ -1,15 +1,50 @@
 import React, { useState, useMemo } from "react";
 import { UserInput, Gender } from "../types";
 import {
-  Loader2,
   Sparkles,
   AlertCircle,
   TrendingUp,
-  Settings,
 } from "lucide-react";
 
 interface BaziFormProps {
   onGeneratePrompt: (data: UserInput) => void;
+}
+
+// 六十甲子列表
+const SIXTY_JIAZI = [
+  "甲子", "乙丑", "丙寅", "丁卯", "戊辰", "己巳", "庚午", "辛未", "壬申", "癸酉",
+  "甲戌", "乙亥", "丙子", "丁丑", "戊寅", "己卯", "庚辰", "辛巳", "壬午", "癸未",
+  "甲申", "乙酉", "丙戌", "丁亥", "戊子", "己丑", "庚寅", "辛卯", "壬辰", "癸巳",
+  "甲午", "乙未", "丙申", "丁酉", "戊戌", "己亥", "庚子", "辛丑", "壬寅", "癸卯",
+  "甲辰", "乙巳", "丙午", "丁未", "戊申", "己酉", "庚戌", "辛亥", "壬子", "癸丑",
+  "甲寅", "乙卯", "丙辰", "丁巳", "戊午", "己未", "庚申", "辛酉", "壬戌", "癸亥",
+];
+
+// 校验是否是有效的六十甲子
+const isValidJiazi = (value: string): boolean => {
+  return SIXTY_JIAZI.includes(value.trim());
+};
+
+// 校验起运年龄是否是1-11之间的整数
+const isValidStartAge = (value: string): boolean => {
+  const num = parseInt(value, 10);
+  return !isNaN(num) && num >= 1 && num <= 11 && Number.isInteger(num);
+};
+
+// 校验出生年份
+const isValidBirthYear = (value: string): boolean => {
+  const num = parseInt(value, 10);
+  return !isNaN(num) && num >= 1900 && num <= 2100;
+};
+
+interface ValidationErrors {
+  birthYear?: string;
+  yearPillar?: string;
+  monthPillar?: string;
+  dayPillar?: string;
+  hourPillar?: string;
+  startAge?: string;
+  firstDaYun?: string;
 }
 
 const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
@@ -25,28 +60,161 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
     firstDaYun: "",
   });
 
+  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+    
+    // 实时校验
+    validateField(name, value);
   };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    validateField(name, value);
+  };
+
+  const validateField = (name: string, value: string) => {
+    let error = "";
+    
+    switch (name) {
+      case "birthYear":
+        if (!value.trim()) {
+          error = "请输入出生年份";
+        } else if (!isValidBirthYear(value)) {
+          error = "年份需在1900-2100之间";
+        }
+        break;
+      case "yearPillar":
+      case "monthPillar":
+      case "dayPillar":
+      case "hourPillar":
+        if (!value.trim()) {
+          error = "请输入干支";
+        } else if (!isValidJiazi(value)) {
+          error = "请输入有效的六十甲子";
+        }
+        break;
+      case "startAge":
+        if (!value.trim()) {
+          error = "请输入起运年龄";
+        } else if (!isValidStartAge(value)) {
+          error = "需为1-11的整数";
+        }
+        break;
+      case "firstDaYun":
+        if (!value.trim()) {
+          error = "请输入第一步大运";
+        } else if (!isValidJiazi(value)) {
+          error = "请输入有效的六十甲子";
+        }
+        break;
+    }
+    
+    setErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
+  // 校验整个表单
+  const validateForm = (): boolean => {
+    const newErrors: ValidationErrors = {};
+    
+    if (!formData.birthYear.trim()) {
+      newErrors.birthYear = "请输入出生年份";
+    } else if (!isValidBirthYear(formData.birthYear)) {
+      newErrors.birthYear = "年份需在1900-2100之间";
+    }
+
+    if (!formData.yearPillar.trim()) {
+      newErrors.yearPillar = "请输入年柱";
+    } else if (!isValidJiazi(formData.yearPillar)) {
+      newErrors.yearPillar = "请输入有效的六十甲子";
+    }
+
+    if (!formData.monthPillar.trim()) {
+      newErrors.monthPillar = "请输入月柱";
+    } else if (!isValidJiazi(formData.monthPillar)) {
+      newErrors.monthPillar = "请输入有效的六十甲子";
+    }
+
+    if (!formData.dayPillar.trim()) {
+      newErrors.dayPillar = "请输入日柱";
+    } else if (!isValidJiazi(formData.dayPillar)) {
+      newErrors.dayPillar = "请输入有效的六十甲子";
+    }
+
+    if (!formData.hourPillar.trim()) {
+      newErrors.hourPillar = "请输入时柱";
+    } else if (!isValidJiazi(formData.hourPillar)) {
+      newErrors.hourPillar = "请输入有效的六十甲子";
+    }
+
+    if (!formData.startAge.trim()) {
+      newErrors.startAge = "请输入起运年龄";
+    } else if (!isValidStartAge(formData.startAge)) {
+      newErrors.startAge = "需为1-11的整数";
+    }
+
+    if (!formData.firstDaYun.trim()) {
+      newErrors.firstDaYun = "请输入第一步大运";
+    } else if (!isValidJiazi(formData.firstDaYun)) {
+      newErrors.firstDaYun = "请输入有效的六十甲子";
+    }
+
+    setErrors(newErrors);
+    // 标记所有字段为已触碰
+    setTouched({
+      birthYear: true,
+      yearPillar: true,
+      monthPillar: true,
+      dayPillar: true,
+      hourPillar: true,
+      startAge: true,
+      firstDaYun: true,
+    });
+    
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 检查表单是否可以提交（用于按钮状态）
+  const isFormValid = useMemo(() => {
+    return (
+      formData.birthYear.trim() !== "" &&
+      isValidBirthYear(formData.birthYear) &&
+      formData.yearPillar.trim() !== "" &&
+      isValidJiazi(formData.yearPillar) &&
+      formData.monthPillar.trim() !== "" &&
+      isValidJiazi(formData.monthPillar) &&
+      formData.dayPillar.trim() !== "" &&
+      isValidJiazi(formData.dayPillar) &&
+      formData.hourPillar.trim() !== "" &&
+      isValidJiazi(formData.hourPillar) &&
+      formData.startAge.trim() !== "" &&
+      isValidStartAge(formData.startAge) &&
+      formData.firstDaYun.trim() !== "" &&
+      isValidJiazi(formData.firstDaYun)
+    );
+  }, [formData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onGeneratePrompt(formData);
+    if (validateForm()) {
+      onGeneratePrompt(formData);
+    }
   };
 
   // Calculate direction for UI feedback
   const daYunDirectionInfo = useMemo(() => {
-    if (!formData.yearPillar) return "等待输入年柱...";
+    if (!formData.yearPillar || !isValidJiazi(formData.yearPillar)) return "等待输入年柱...";
 
     const firstChar = formData.yearPillar.trim().charAt(0);
     const yangStems = ["甲", "丙", "戊", "庚", "壬"];
-    const yinStems = ["乙", "丁", "己", "辛", "癸"];
 
-    let isYangYear = true; // default assume Yang if unknown
-    if (yinStems.includes(firstChar)) isYangYear = false;
+    const isYangYear = yangStems.includes(firstChar);
 
     let isForward = false;
     if (formData.gender === Gender.MALE) {
@@ -57,6 +225,23 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
 
     return isForward ? "顺行 (阳男/阴女)" : "逆行 (阴男/阳女)";
   }, [formData.yearPillar, formData.gender]);
+
+  // 输入框样式（根据错误状态）
+  const getInputClassName = (fieldName: string, baseClasses: string) => {
+    const hasError = touched[fieldName] && errors[fieldName as keyof ValidationErrors];
+    return `${baseClasses} ${hasError ? "border-red-400 focus:ring-red-500" : ""}`;
+  };
+
+  // 错误提示组件
+  const ErrorMessage = ({ field }: { field: keyof ValidationErrors }) => {
+    if (!touched[field] || !errors[field]) return null;
+    return (
+      <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+        <AlertCircle className="w-3 h-3" />
+        {errors[field]}
+      </p>
+    );
+  };
 
   return (
     <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
@@ -125,7 +310,7 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
             <span>输入四柱干支 (必填)</span>
           </div>
 
-          {/* Birth Year Input - Added as requested */}
+          {/* Birth Year Input */}
           <div className="mb-4">
             <label className="block text-xs font-bold text-gray-600 mb-1">
               出生年份 (阳历)
@@ -138,9 +323,14 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
               max="2100"
               value={formData.birthYear}
               onChange={handleChange}
+              onBlur={handleBlur}
               placeholder="如: 1990"
-              className="w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white font-bold"
+              className={getInputClassName(
+                "birthYear",
+                "w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white font-bold"
+              )}
             />
+            <ErrorMessage field="birthYear" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -154,9 +344,14 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
                 required
                 value={formData.yearPillar}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 placeholder="如: 甲子"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                className={getInputClassName(
+                  "yearPillar",
+                  "w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                )}
               />
+              <ErrorMessage field="yearPillar" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">
@@ -168,9 +363,14 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
                 required
                 value={formData.monthPillar}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 placeholder="如: 丙寅"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                className={getInputClassName(
+                  "monthPillar",
+                  "w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                )}
               />
+              <ErrorMessage field="monthPillar" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">
@@ -182,9 +382,14 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
                 required
                 value={formData.dayPillar}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 placeholder="如: 戊辰"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                className={getInputClassName(
+                  "dayPillar",
+                  "w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                )}
               />
+              <ErrorMessage field="dayPillar" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">
@@ -196,9 +401,14 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
                 required
                 value={formData.hourPillar}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 placeholder="如: 壬戌"
-                className="w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                className={getInputClassName(
+                  "hourPillar",
+                  "w-full px-3 py-2 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-center font-serif-sc font-bold"
+                )}
               />
+              <ErrorMessage field="hourPillar" />
             </div>
           </div>
         </div>
@@ -219,12 +429,17 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
                 name="startAge"
                 required
                 min="1"
-                max="100"
+                max="11"
                 value={formData.startAge}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 placeholder="如: 3"
-                className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-center font-bold"
+                className={getInputClassName(
+                  "startAge",
+                  "w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-center font-bold"
+                )}
               />
+              <ErrorMessage field="startAge" />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1">
@@ -236,9 +451,14 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
                 required
                 value={formData.firstDaYun}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 placeholder="如: 丁卯"
-                className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-center font-serif-sc font-bold"
+                className={getInputClassName(
+                  "firstDaYun",
+                  "w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-center font-serif-sc font-bold"
+                )}
               />
+              <ErrorMessage field="firstDaYun" />
             </div>
           </div>
           <p className="text-xs text-indigo-600/70 mt-2 text-center">
@@ -249,12 +469,22 @@ const BaziForm: React.FC<BaziFormProps> = ({ onGeneratePrompt }) => {
           </p>
         </div>
 
+        {/* 提示信息 */}
+        <p className="text-xs text-gray-400 text-center">
+          四柱和大运需输入有效的六十甲子（如：甲子、乙丑、丙寅等）
+        </p>
+
         <button
           type="button"
           onClick={handleSubmit}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-lg transform transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
+          disabled={!isFormValid}
+          className={`w-full font-bold py-3.5 rounded-xl shadow-lg transform transition-all flex items-center justify-center gap-2 ${
+            isFormValid
+              ? "bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-[1.01] active:scale-[0.99]"
+              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+          }`}
         >
-          <Sparkles className="h-5 w-5 text-amber-300" />
+          <Sparkles className={`h-5 w-5 ${isFormValid ? "text-amber-300" : "text-gray-400"}`} />
           <span>第一步：生成提示词 (Prompt)</span>
         </button>
       </form>
